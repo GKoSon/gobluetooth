@@ -188,9 +188,185 @@ require (
     pi@raspberrypi:~/XX $ go build main.go
     main.go:10:2: found packages bluetooth (adapter.go) and main (koson_pi_nus.go) in /home/pi/go/pkg/mod/github.com/!g!ko!son/gobluetooth@v0.0.0-20220422070120-588124614c38
     pi@raspberrypi:~/XX $ 
-    这是因为我自己代码里面的别名 和 仓库 冲突了 我把自己的别名 修改一下 即可 如下
+    这是因为我自己代码里面koson_pi_nus.go也有mian.go
+    提交一次del它
     
+    
+第六次提交:
+本地写代码 如下 可以的
+操作是和上面说的一样 利用mod 自动拉 
+如果更新mod 就手动把V1.2.3修改为最后的commit
+
+package main
+
+// This example implements a NUS (Nordic UART Service) client. See nusserver for
+// details.
+
+import (
+	"log"
+	"time"
+
+	bluetooth "github.com/GKoSon/gobluetooth"
+)
+
+var (
+	serviceUUID = bluetooth.ServiceUUIDNordicUART
+	rxUUID      = bluetooth.CharacteristicUUIDUARTRX
+	txUUID      = bluetooth.CharacteristicUUIDUARTTX
+)
+
+var adapter = bluetooth.DefaultAdapter
+
+const target_name = "M_KOSON"
+
+var runCnt int64 = 0
+
+func oneloop() {
+	// Enable BLE interface.
+	//STEP 准备通过这个接口 选择不同HCI
+	err := adapter.Enable()
+	if err != nil {
+		log.Printf("could not enable the BLE stack:%v", err.Error())
+		return
+	}
+
+	// The address to connect to. Set during scanning and read afterwards.
+	var foundDevice bluetooth.ScanResult
+
+	// Scan for NUS peripheral.
+	runCnt++
+	log.Printf("Scanning...%d", runCnt)
+	err = adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
+		if !result.AdvertisementPayload.HasServiceUUID(serviceUUID) {
+			return
+		}
+		/*加强停止Scan函数的限制条件*/
+		/*条件1--从机必须有名字 而且符合约定*/
+		log.Printf("Scanned name 1-%s 2-%s", foundDevice.AdvertisementPayload.LocalName(), foundDevice.LocalName())
+		if target_name != foundDevice.AdvertisementPayload.LocalName() {
+			log.Printf("Failed name")
+			return
+		}
+
+		/*条件2--从机连接成功*/
+		d, e := adapter.Connect(foundDevice.Address, bluetooth.ConnectionParams{})
+		if e != nil {
+			log.Printf("Failed Connect %v %v", d, e)
+			return
+		}
+
+		foundDevice = result
+
+		// Stop the scan.
+		err := adapter.StopScan()
+		if err != nil {
+			// Unlikely, but we can't recover from this.
+			log.Printf("Failed StopScan %v ", err.Error())
+		}
+	})
+
+	if err != nil {
+		log.Printf("Failed Scan %v ", err.Error())
+		return
+	}
+
+	// Found a NUS peripheral. Connect to it.
+	device, err := adapter.Connect(foundDevice.Address, bluetooth.ConnectionParams{})
+	if err != nil {
+		log.Printf("TG Failed to connect: %v ", err.Error())
+		return
+	}
+
+	// Connected. Look up the Nordic UART Service.
+	log.Printf("Discovering service...")
+	services, err := device.DiscoverServices([]bluetooth.UUID{serviceUUID})
+	if err != nil {
+		println("Failed to discover the Nordic UART Service:", err.Error())
+		return
+	}
+	service := services[0]
+
+	// Get the two characteristics present in this service.
+	chars, err := service.DiscoverCharacteristics([]bluetooth.UUID{rxUUID, txUUID})
+	if err != nil {
+		println("Failed to discover RX and TX characteristics:", err.Error())
+		return
+	}
+	var rx bluetooth.DeviceCharacteristic
+	var tx bluetooth.DeviceCharacteristic
+	if chars[0].UUID() == txUUID {
+		tx = chars[0]
+		rx = chars[1]
+	} else {
+		tx = chars[1]
+		rx = chars[0]
+	}
+	log.Printf("RX %v\r\n", rx)
+	log.Printf("TX %v\r\n", tx)
+	log.Printf("DiscoverCharacteristics:%+v\r\n", chars)
+
+	// Enable notifications to receive incoming data.
+	err = tx.EnableNotifications(func(value []byte) {
+		log.Printf("PI recv %d bytes: %+v\r\n", len(value), value)
+	})
+	if err != nil {
+		log.Printf("Failed EnableNotifications %+v\r\n", err.Error())
+		return
+	}
+
+	log.Printf("Connected.When NODE disconnect.This pid while Exit\r\n")
+	/*等待从机断开 PI从不发消息*/
+	for {
+		if !device.IsConnected() {
+			log.Printf("device GoodBye\r\n")
+			return
+		}
+		time.Sleep(time.Microsecond * 500)
+	}
+}
+
+func main() {
+	for {
+		oneloop()
+	}
+}
+
+/*
+程序逻辑
+main是死循环 也就是一旦oneloop()调用return那就继续下一次
+正常retun是等待BLE链路的标记位
+
+*/
 
 
+
+
+
+
+
+现在小结一下两种思路
+1---就是我这个 
+把别人的拉下来
+rm别人的.git文件
+初始化自己的git文件
+把代码推上来
+全局修改仓库里面的mod的包名
+现在可以自己本地引用这个新的包了
+和别人的 完全脱钩 你感觉不到别人
+
+
+2--我另外一个fork的
+把别人的fork到自己GitHub
+把自己这个仓库拉下来
+自己随便ADD函数什么的 自己修改 在推上去
+
+现在不可以自己本地引用这个新的包 因为没有新包呀
+本地的代码 和前面一样 还是在使用原始仓库的包
+想使用自己fork的这个的修改的话 那就自己把本地文件的mod文件修改一下
+采用replace的关键字
+从一个云端 切换到 另外一个云端
+
+
+准备微信写一个文章:攻城狮金华
 
 
