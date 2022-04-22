@@ -18,7 +18,7 @@ var (
 
 var adapter = bluetooth.DefaultAdapter
 
-const target_name = "GKOSON"
+const target_name = "M_KOSON"
 
 var runCnt int64 = 0
 

@@ -2,7 +2,8 @@
 
 微信文章:
 
-第一次提交:
+第一次提交:准备简化的代码仓库
+
 项目来源git clone https://github.com/tinygo-org/bluetooth.git
 克隆TingGo仓库 
 commit e75811786c7ec1f2890e1ff0508cc28d5ac5de62 
@@ -35,9 +36,9 @@ C:\Program Files\Git\bin
 
 
 
-第二次提交:全局替换
-仓库已经推上去 
-本地写代码 examples\nusclient\main.go 应用它
+第二次提交: 全局替换
+前面仓库已经推上去 
+本地写代码 examples\nusclient\main.go 引用它
 以前是 import 	"tinygo.org/x/bluetooth"
 我就写 import 	"GKoSon/gobluetooth"
 测试失败！
@@ -117,5 +118,79 @@ root@raspberrypi:/home/pi/PK#
 这就是下载的路径啊！！！！
 测试一下
 【感觉还是fork一下 在修改fork的仓库+replace的方式比较简单】
+
+
+
+第四次提交:成功了
+前面提交以后 我自己记录一下commit
+手动修改本地文件
+...
+module xx
+
+go 1.17
+
+require github.com/GKoSon/gobluetooth a31499c265a17b1894e823ef49246b2b45d3a555
+...
+现在执行 go mod tidy 可以成功了！
+
+root@raspberrypi:/home/pi/PK# go mod tidy      
+go: downloading github.com/GKoSon/gobluetooth v0.0.0-20220422055325-a31499c265a1
+root@raspberrypi:/home/pi/PK# go build main.go 
+# command-line-arguments
+./main.go:121:13: device.IsConnected undefined (type *bluetooth.Device has no field or method IsConnected)
+root@raspberrypi:/home/pi/PK# 
+
+
+再看一下 GO帮我做的事情 (其实没有意义)
+root@raspberrypi:/home/pi/PK# cat go.mod 
+module xx
+
+go 1.17
+
+require github.com/GKoSon/gobluetooth v0.0.0-20220422055325-a31499c265a1
+
+require (
+        github.com/fatih/structs v1.1.0 // indirect
+        github.com/godbus/dbus/v5 v5.0.3 // indirect
+        github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
+        github.com/muka/go-bluetooth v0.0.0-20210812063148-b6c83362e27d // indirect
+        github.com/sirupsen/logrus v1.6.0 // indirect
+        golang.org/x/sys v0.0.0-20200826173525-f9321e4c35a6 // indirect
+)
+
+
+本地的单例程序上传上来 
+可以独立在PI运行的!
+修改需要我自己的函数！
+
+
+第五次提交:
+直接把下面文件 放在台湾树莓派运行
+流程如下
+    pi@raspberrypi:~/XX $ go build main.go 
+    main.go:10:2: no required module provides package github.com/GKoSon/gobluetooth: go.mod file not found in current directory or any parent directory; see 'go help modules'
+    pi@raspberrypi:~/XX $ go mod init xx
+    go: creating new go.mod: module xx
+    go: to add module requirements and sums:
+            go mod tidy
+    pi@raspberrypi:~/XX $ go mod tidy
+    go: finding module for package github.com/GKoSon/gobluetooth
+    go: downloading github.com/GKoSon/gobluetooth v0.0.0-20220422070120-588124614c38
+    go: found github.com/GKoSon/gobluetooth in github.com/GKoSon/gobluetooth v0.0.0-20220422070120-588124614c38
+    go: downloading github.com/godbus/dbus/v5 v5.0.3
+    go: downloading github.com/sirupsen/logrus v1.6.0
+    go: downloading github.com/stretchr/testify v1.6.1
+    go: downloading github.com/konsorten/go-windows-terminal-sequences v1.0.3
+    go: downloading golang.org/x/sys v0.0.0-20200826173525-f9321e4c35a6
+    go: downloading github.com/davecgh/go-spew v1.1.1
+    go: downloading github.com/pmezard/go-difflib v1.0.0
+    go: downloading gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
+    pi@raspberrypi:~/XX $ go build main.go
+    main.go:10:2: found packages bluetooth (adapter.go) and main (koson_pi_nus.go) in /home/pi/go/pkg/mod/github.com/!g!ko!son/gobluetooth@v0.0.0-20220422070120-588124614c38
+    pi@raspberrypi:~/XX $ 
+    这是因为我自己代码里面的别名 和 仓库 冲突了 我把自己的别名 修改一下 即可 如下
+    
+
+
 
 
