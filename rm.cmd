@@ -12,9 +12,10 @@ rm gatts_o*
 rm -r .git
 rm -r .circleci
 rm -r s1*
-rm  *.md
-rm  *_sd.go
-rm  *_darwin.go
 rm  LICENSE
 rm -r winbt 
 rm -r images
+rm  *.md
+rm  *_sd.go
+rm  *_darwin.go
+rm Makefile

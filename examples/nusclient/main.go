@@ -4,8 +4,10 @@ package main
 // details.
 
 import (
+	"log"
+	"time"
+
 	"tinygo.org/x/bluetooth"
-	"tinygo.org/x/bluetooth/rawterm"
 )
 
 var (
@@ -16,11 +18,16 @@ var (
 
 var adapter = bluetooth.DefaultAdapter
 
-func main() {
+const target_name = "GKOSON"
+
+var runCnt int64 = 0
+
+func oneloop() {
 	// Enable BLE interface.
+	//STEP 准备通过这个接口 选择不同HCI
 	err := adapter.Enable()
 	if err != nil {
-		println("could not enable the BLE stack:", err.Error())
+		log.Printf("could not enable the BLE stack:%v", err.Error())
 		return
 	}
 
@@ -28,43 +35,51 @@ func main() {
 	var foundDevice bluetooth.ScanResult
 
 	// Scan for NUS peripheral.
-	println("Scanning...")
+	runCnt++
+	log.Printf("Scanning...%d", runCnt)
 	err = adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
 		if !result.AdvertisementPayload.HasServiceUUID(serviceUUID) {
 			return
 		}
+		/*加强停止Scan函数的限制条件*/
+		/*条件1--从机必须有名字 而且符合约定*/
+		log.Printf("Scanned name 1-%s 2-%s", foundDevice.AdvertisementPayload.LocalName(), foundDevice.LocalName())
+		if target_name != foundDevice.AdvertisementPayload.LocalName() {
+			log.Printf("Failed name")
+			return
+		}
+
+		/*条件2--从机连接成功*/
+		d, e := adapter.Connect(foundDevice.Address, bluetooth.ConnectionParams{})
+		if e != nil {
+			log.Printf("Failed Connect %v %v", d, e)
+			return
+		}
+
 		foundDevice = result
 
 		// Stop the scan.
 		err := adapter.StopScan()
 		if err != nil {
 			// Unlikely, but we can't recover from this.
-			println("failed to stop the scan:", err.Error())
+			log.Printf("Failed StopScan %v ", err.Error())
 		}
 	})
-	if err != nil {
-		println("could not start a scan:", err.Error())
-		return
-	}
 
-	// Found a device: print this event.
-	if name := foundDevice.LocalName(); name == "" {
-		print("Connecting to ", foundDevice.Address.String(), "...")
-		println()
-	} else {
-		print("Connecting to ", name, " (", foundDevice.Address.String(), ")...")
-		println()
+	if err != nil {
+		log.Printf("Failed Scan %v ", err.Error())
+		return
 	}
 
 	// Found a NUS peripheral. Connect to it.
 	device, err := adapter.Connect(foundDevice.Address, bluetooth.ConnectionParams{})
 	if err != nil {
-		println("Failed to connect:", err.Error())
+		log.Printf("TG Failed to connect: %v ", err.Error())
 		return
 	}
 
 	// Connected. Look up the Nordic UART Service.
-	println("Discovering service...")
+	log.Printf("Discovering service...")
 	services, err := device.DiscoverServices([]bluetooth.UUID{serviceUUID})
 	if err != nil {
 		println("Failed to discover the Nordic UART Service:", err.Error())
@@ -78,52 +93,48 @@ func main() {
 		println("Failed to discover RX and TX characteristics:", err.Error())
 		return
 	}
-	rx := chars[0]
-	tx := chars[1]
+	var rx bluetooth.DeviceCharacteristic
+	var tx bluetooth.DeviceCharacteristic
+	if chars[0].UUID() == txUUID {
+		tx = chars[0]
+		rx = chars[1]
+	} else {
+		tx = chars[1]
+		rx = chars[0]
+	}
+	log.Printf("RX %v\r\n", rx)
+	log.Printf("TX %v\r\n", tx)
+	log.Printf("DiscoverCharacteristics:%+v\r\n", chars)
 
 	// Enable notifications to receive incoming data.
 	err = tx.EnableNotifications(func(value []byte) {
-		for _, c := range value {
-			rawterm.Putchar(c)
-		}
+		log.Printf("PI recv %d bytes: %+v\r\n", len(value), value)
 	})
 	if err != nil {
-		println("Failed to enable TX notifications:", err.Error())
+		log.Printf("Failed EnableNotifications %+v\r\n", err.Error())
 		return
 	}
 
-	println("Connected. Exit console using Ctrl-X.")
-	rawterm.Configure()
-	defer rawterm.Restore()
-	var line []byte
+	log.Printf("Connected.When NODE disconnect.This pid while Exit\r\n")
+	/*等待从机断开 PI从不发消息*/
 	for {
-		ch := rawterm.Getchar()
-		line = append(line, ch)
-
-		// Send the current line to the central.
-		if ch == '\x18' {
-			// The user pressed Ctrl-X, exit the program.
-			break
-		} else if ch == '\n' {
-			sendbuf := line // copy buffer
-			// Reset the slice while keeping the buffer in place.
-			line = line[:0]
-
-			// Send the sendbuf after breaking it up in pieces.
-			for len(sendbuf) != 0 {
-				// Chop off up to 20 bytes from the sendbuf.
-				partlen := 20
-				if len(sendbuf) < 20 {
-					partlen = len(sendbuf)
-				}
-				part := sendbuf[:partlen]
-				sendbuf = sendbuf[partlen:]
-				// This performs a "write command" aka "write without response".
-				_, err := rx.WriteWithoutResponse(part)
-				if err != nil {
-					println("could not send:", err.Error())
-				}
-			}
+		if !device.IsConnected() {
+			log.Printf("device GoodBye\r\n")
+			return
 		}
+		time.Sleep(time.Microsecond * 500)
 	}
 }
+
+func main() {
+	for {
+		oneloop()
+	}
+}
+
+/*
+程序逻辑
+main是死循环 也就是一旦oneloop()调用return那就继续下一次
+正常retun是等待BLE链路的标记位
+
+*/
