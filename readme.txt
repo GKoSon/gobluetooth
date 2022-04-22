@@ -242,14 +242,14 @@ func oneloop() {
 		}
 		/*加强停止Scan函数的限制条件*/
 		/*条件1--从机必须有名字 而且符合约定*/
-		log.Printf("Scanned name 1-%s 2-%s", foundDevice.AdvertisementPayload.LocalName(), foundDevice.LocalName())
-		if target_name != foundDevice.AdvertisementPayload.LocalName() {
+		log.Printf("Scanned MAC %s", result.Address.String())
+		if target_name != result.AdvertisementPayload.LocalName() {
 			log.Printf("Failed name")
 			return
 		}
-
+		log.Printf("Scanned name %s", result.LocalName())
 		/*条件2--从机连接成功*/
-		d, e := adapter.Connect(foundDevice.Address, bluetooth.ConnectionParams{})
+		d, e := adapter.Connect(result.Address, bluetooth.ConnectionParams{})
 		if e != nil {
 			log.Printf("Failed Connect %v %v", d, e)
 			return
@@ -337,6 +337,7 @@ main是死循环 也就是一旦oneloop()调用return那就继续下一次
 正常retun是等待BLE链路的标记位
 
 */
+
 
 
 
