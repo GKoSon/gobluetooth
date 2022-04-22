@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"time"
 
-	bluetooth "GKoSon/gobluetooth"
+	bluetooth "github.com/GKoSon/gobluetooth"
 )
 
 var adapter = bluetooth.DefaultAdapter

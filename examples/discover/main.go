@@ -19,7 +19,7 @@ package main
 import (
 	"strconv"
 
-	bluetooth "GKoSon/gobluetooth"
+	bluetooth "github.com/GKoSon/gobluetooth"
 )
 
 var adapter = bluetooth.DefaultAdapter

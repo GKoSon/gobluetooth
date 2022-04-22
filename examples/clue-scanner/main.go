@@ -6,7 +6,7 @@ import (
 	"machine"
 	"time"
 
-	bluetooth "GKoSon/gobluetooth"
+	bluetooth "github.com/GKoSon/gobluetooth"
 
 	"tinygo.org/x/drivers/st7789"
 	"tinygo.org/x/tinyterm"

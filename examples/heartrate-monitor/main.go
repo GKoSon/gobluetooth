@@ -20,7 +20,7 @@
 package main
 
 import (
-	bluetooth "GKoSon/gobluetooth"
+	bluetooth "github.com/GKoSon/gobluetooth"
 )
 
 var (

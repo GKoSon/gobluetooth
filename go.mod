@@ -1,4 +1,4 @@
-module GKoSon/gobluetooth
+module github.com/GKoSon/gobluetooth
 
 go 1.15
 

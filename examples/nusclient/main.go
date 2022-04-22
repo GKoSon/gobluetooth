@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"tinygo.org/x/bluetooth"
+	bluetooth "github.com/GKoSon/gobluetooth"
 )
 
 var (

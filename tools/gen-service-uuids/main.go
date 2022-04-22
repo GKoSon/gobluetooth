@@ -13,7 +13,7 @@ import (
 	"text/template"
 	"time"
 
-	bluetooth "GKoSon/gobluetooth"
+	bluetooth "github.com/GKoSon/gobluetooth"
 )
 
 type Service struct {
