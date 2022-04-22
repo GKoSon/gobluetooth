@@ -1,4 +1,4 @@
-module tinygo.org/x/bluetooth
+module GKoSon/gobluetooth
 
 go 1.15
 

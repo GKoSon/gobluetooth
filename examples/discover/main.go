@@ -19,7 +19,7 @@ package main
 import (
 	"strconv"
 
-	"tinygo.org/x/bluetooth"
+	bluetooth "GKoSon/gobluetooth"
 )
 
 var adapter = bluetooth.DefaultAdapter

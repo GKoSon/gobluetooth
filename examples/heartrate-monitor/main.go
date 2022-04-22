@@ -20,7 +20,7 @@
 package main
 
 import (
-	"tinygo.org/x/bluetooth"
+	bluetooth "GKoSon/gobluetooth"
 )
 
 var (

@@ -2,6 +2,7 @@
 
 微信文章:
 
+第一次提交:
 项目来源git clone https://github.com/tinygo-org/bluetooth.git
 克隆TingGo仓库 
 commit e75811786c7ec1f2890e1ff0508cc28d5ac5de62 
@@ -31,3 +32,15 @@ C:\Program Files\Git\bin
 计划修改
 1--HCI接口切换
 2--断开检查
+
+
+
+第二次提交:
+仓库已经推上去 
+本地写代码 examples\nusclient\main.go 应用它
+以前是 import 	"tinygo.org/x/bluetooth"
+我就写 import 	"GKoSon/gobluetooth"
+测试失败！
+因为我这个项目的mod文件还是原始的
+本次提交 做全局替换 tinygo.org/x/bluetooth -> GKoSon/gobluetooth
+module tinygo.org/x/bluetooth

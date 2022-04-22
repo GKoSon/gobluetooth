@@ -9,7 +9,8 @@ import (
 	"machine"
 	"time"
 
-	"tinygo.org/x/bluetooth"
+	bluetooth "GKoSon/gobluetooth"
+
 	"tinygo.org/x/drivers/ws2812"
 )
 
