@@ -238,7 +238,7 @@ func makeScanResult(props *device.Device1Properties) ScanResult {
 // Device is a connection to a remote peripheral.
 type Device struct {
 	device  *device.Device1
-	devPath string //debug
+	DevPath string //debug
 }
 
 // Connect starts a connection attempt to the given peripheral device address.
@@ -265,7 +265,7 @@ func (a *Adapter) Connect(address Addresser, params ConnectionParams) (*Device, 
 	a.connectHandler(nil, true)
 	return &Device{
 		device:  dev,
-		devPath: path,
+		DevPath: path,
 	}, nil
 }
 
