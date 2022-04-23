@@ -246,7 +246,8 @@ type Device struct {
 // On Linux and Windows, the IsRandom part of the address is ignored.
 func (a *Adapter) Connect(address Addresser, params ConnectionParams) (*Device, error) {
 	adr := address.(Address)
-	devicePath := dbus.ObjectPath(string(a.adapter.Path()) + "/dev_" + strings.Replace(adr.MAC.String(), ":", "_", -1))
+	path := string(a.adapter.Path()) + "/dev_" + strings.Replace(adr.MAC.String(), ":", "_", -1)
+	devicePath := dbus.ObjectPath(path)
 	dev, err := device.NewDevice1(devicePath) //device来自MUKA包//MUKA自己也封装了一个类似函数
 	if err != nil {
 		return nil, err
@@ -264,7 +265,7 @@ func (a *Adapter) Connect(address Addresser, params ConnectionParams) (*Device, 
 	a.connectHandler(nil, true)
 	return &Device{
 		device:  dev,
-		devPath: devicePath,
+		devPath: path,
 	}, nil
 }
 
