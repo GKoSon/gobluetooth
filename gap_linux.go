@@ -237,7 +237,8 @@ func makeScanResult(props *device.Device1Properties) ScanResult {
 
 // Device is a connection to a remote peripheral.
 type Device struct {
-	device *device.Device1
+	device  *device.Device1
+	devPath string //debug
 }
 
 // Connect starts a connection attempt to the given peripheral device address.
@@ -246,7 +247,7 @@ type Device struct {
 func (a *Adapter) Connect(address Addresser, params ConnectionParams) (*Device, error) {
 	adr := address.(Address)
 	devicePath := dbus.ObjectPath(string(a.adapter.Path()) + "/dev_" + strings.Replace(adr.MAC.String(), ":", "_", -1))
-	dev, err := device.NewDevice1(devicePath)
+	dev, err := device.NewDevice1(devicePath) //device来自MUKA包//MUKA自己也封装了一个类似函数
 	if err != nil {
 		return nil, err
 	}
@@ -259,12 +260,11 @@ func (a *Adapter) Connect(address Addresser, params ConnectionParams) (*Device, 
 			return nil, err
 		}
 	}
-
 	// TODO: a proper async callback.
 	a.connectHandler(nil, true)
-
 	return &Device{
-		device: dev,
+		device:  dev,
+		devPath: devicePath,
 	}, nil
 }
 
