@@ -1,3 +1,4 @@
+//go:build !baremetal
 // +build !baremetal
 
 // Some documentation for the BlueZ D-Bus interface:
@@ -37,11 +38,20 @@ func (a *Adapter) Enable() (err error) {
 	if a.id == "" {
 		a.adapter, err = api.GetDefaultAdapter()
 		if err != nil {
-			return
+			return err
 		}
 		a.id, err = a.adapter.GetAdapterID()
+	} else { //说明a.id已经前置赋值
+		a.adapter, err = api.GetAdapter(a.id)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func (a *Adapter) SetHciId(id string) {
+	a.id = id
 }
 
 func (a *Adapter) Address() (MACAddress, error) {
