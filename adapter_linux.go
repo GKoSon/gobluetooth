@@ -31,6 +31,12 @@ var DefaultAdapter = &Adapter{
 		return
 	},
 }
+var HCI1Adapter = &Adapter{
+	id: "hci1",
+	connectHandler: func(device Addresser, connected bool) {
+		return
+	},
+}
 
 // Enable configures the BLE stack. It must be called before any
 // Bluetooth-related calls (unless otherwise indicated).
@@ -63,4 +69,28 @@ func (a *Adapter) Address() (MACAddress, error) {
 		return MACAddress{}, err
 	}
 	return MACAddress{MAC: mac}, nil
+}
+
+func (a *Adapter) Enable2(hcix string) (err error) {
+	adapter.SetDefaultAdapterID(hcix) //仅仅增加一句话
+	if a.id == "" {
+		a.adapter, err = api.GetDefaultAdapter()
+		if err != nil {
+			return
+		}
+		a.id, err = a.adapter.GetAdapterID()
+	}
+	return nil
+}
+
+func (a *Adapter) Enable3(hcix string) (err error) {
+	//adapter.SetDefaultAdapterID(hcix)
+	if a.id == "" {
+		a.adapter, err = api.GetAdapter(hcix) //GetDefaultAdapter()
+		if err != nil {
+			return
+		}
+		a.id, err = a.adapter.GetAdapterID()
+	}
+	return nil
 }
