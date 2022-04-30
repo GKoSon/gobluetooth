@@ -5,7 +5,8 @@ import "errors"
 // MAC represents a MAC address, in little endian format.
 type MAC [6]byte
 
-var errInvalidMAC = errors.New("bluetooth: failed to parse MAC address")
+var errInvalidMAC = errors.New("bluetooth: failed to parse MAC address errInvalidMAC")
+var errInvalidIndex = errors.New("bluetooth: failed to parse MAC address errInvalidIndex")
 
 // ParseMAC parses the given MAC address, which must be in 11:22:33:AA:BB:CC
 // format. If it cannot be parsed, an error is returned.
@@ -36,8 +37,9 @@ func ParseMAC(s string) (mac MAC, err error) {
 		}
 		macIndex--
 	}
-	if macIndex != 0 {
-		err = errInvalidMAC
+	//if macIndex != 0 {
+	if macIndex != -1 {
+		err = errInvalidIndex
 	}
 	return
 }
