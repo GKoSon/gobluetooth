@@ -16,6 +16,7 @@ import (
 type Adapter struct {
 	adapter              *adapter.Adapter1
 	id                   string
+	Mac                  string
 	cancelChan           chan struct{}
 	defaultAdvertisement *Advertisement
 
@@ -47,11 +48,13 @@ func (a *Adapter) Enable() (err error) {
 			return err
 		}
 		a.id, err = a.adapter.GetAdapterID()
+		a.Mac = a.adapter.Properties.Address
 	} else { //说明a.id已经前置赋值
 		a.adapter, err = api.GetAdapter(a.id)
 		if err != nil {
 			return err
 		}
+		a.Mac = a.adapter.Properties.Address
 	}
 	return nil
 }
