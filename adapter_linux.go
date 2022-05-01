@@ -8,9 +8,11 @@ package bluetooth
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/muka/go-bluetooth/api"
 	"github.com/muka/go-bluetooth/bluez/profile/adapter"
+    "github.com/muka/go-bluetooth/hw/linux"
 )
 
 type Adapter struct {
@@ -67,10 +69,12 @@ func (a *Adapter) Address() (MACAddress, error) {
 	if a.adapter == nil {
 		return MACAddress{}, errors.New("adapter not enabled")
 	}
+	fmt.Println("a.adapter.Properties.Address", a.adapter.Properties.Address)
 	mac, err := ParseMAC(a.adapter.Properties.Address)
 	if err != nil {
 		return MACAddress{}, err
 	}
+	fmt.Println("Address", mac)
 	return MACAddress{MAC: mac}, nil
 }
 
@@ -96,4 +100,9 @@ func (a *Adapter) Enable3(hcix string) (err error) {
 		a.id, err = a.adapter.GetAdapterID()
 	}
 	return nil
+}
+
+//调用大哥的方法 优雅复位HCI
+func (a *Adapter) Reset() (err error) {
+	return linux.Reset(a.id)
 }
