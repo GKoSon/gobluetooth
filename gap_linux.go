@@ -177,7 +177,8 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 				devices[objectPath] = props
 				if KOSONDEBUG {
 					fmt.Println("2")
-					fmt.Println("props", props)
+					fmt.Printf("props.Name\r\n", props.Name)
+					fmt.Printf("props %#v\r\n", props)
 				}
 				callback(a, makeScanResult(props))
 			case "org.freedesktop.DBus.Properties.PropertiesChanged":
@@ -199,8 +200,8 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 				}
 				if KOSONDEBUG {
 					fmt.Println("3")
-					fmt.Println("props.Name", props.Name)
-					fmt.Println("props", props)
+					fmt.Printf("props.Name\r\n", props.Name)
+					fmt.Printf("props %#v\r\n", props)
 				}
 				callback(a, makeScanResult(props))
 			}
