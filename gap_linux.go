@@ -177,7 +177,7 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 				devices[objectPath] = props
 				if KOSONDEBUG {
 					fmt.Println("2")
-					fmt.Printf("props.Name\r\n", props.Name)
+					fmt.Printf("props.Name%#v\r\n", props.Name)
 					fmt.Printf("props %#v\r\n", props)
 				}
 				callback(a, makeScanResult(props))
@@ -200,7 +200,7 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 				}
 				if KOSONDEBUG {
 					fmt.Println("3")
-					fmt.Printf("props.Name\r\n", props.Name)
+					fmt.Printf("props.Name%#v\r\n", props.Name)
 					fmt.Printf("props %#v\r\n", props)
 				}
 				callback(a, makeScanResult(props))
