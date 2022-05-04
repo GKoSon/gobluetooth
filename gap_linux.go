@@ -4,6 +4,7 @@
 package bluetooth
 
 import (
+	"fmt" //debug
 	"strings"
 
 	"github.com/godbus/dbus/v5"
@@ -11,6 +12,8 @@ import (
 	"github.com/muka/go-bluetooth/bluez/profile/advertising"
 	"github.com/muka/go-bluetooth/bluez/profile/device"
 )
+
+var KOSONDEBUG bool = true
 
 // Address contains a Bluetooth MAC address.
 type Address struct {
@@ -59,6 +62,7 @@ func (a *Advertisement) Configure(options AdvertisementOptions) error {
 func (a *Advertisement) Start() error {
 	if a.advertisement != nil {
 		panic("todo: start advertisement a second time")
+		fmt.Println("\r\n")
 	}
 	_, err := api.ExposeAdvertisement(a.adapter.id, a.properties, uint32(a.properties.Timeout))
 	if err != nil {
@@ -124,6 +128,10 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 	devices := make(map[dbus.ObjectPath]*device.Device1Properties)
 	for _, dev := range deviceList {
 		if dev.Properties.Connected {
+			if KOSONDEBUG {
+				fmt.Println("1")
+				fmt.Println("dev.Properties", dev.Properties)
+			}
 			callback(a, makeScanResult(dev.Properties))
 			select {
 			case <-cancelChan:
@@ -167,6 +175,10 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 				var props *device.Device1Properties
 				props, _ = props.FromDBusMap(rawprops)
 				devices[objectPath] = props
+				if KOSONDEBUG {
+					fmt.Println("2")
+					fmt.Println("props", props)
+				}
 				callback(a, makeScanResult(props))
 			case "org.freedesktop.DBus.Properties.PropertiesChanged":
 				interfaceName := sig.Body[0].(string)
@@ -184,6 +196,11 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 					case "UUIDs":
 						props.UUIDs = val.Value().([]string)
 					}
+				}
+				if KOSONDEBUG {
+					fmt.Println("3")
+					fmt.Println("props.Name", props.Name)
+					fmt.Println("props", props)
 				}
 				callback(a, makeScanResult(props))
 			}
