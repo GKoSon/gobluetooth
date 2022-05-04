@@ -12,13 +12,14 @@ import (
 
 	"github.com/muka/go-bluetooth/api"
 	"github.com/muka/go-bluetooth/bluez/profile/adapter"
-    "github.com/muka/go-bluetooth/hw/linux"
+	"github.com/muka/go-bluetooth/hw/linux"
 )
 
 type Adapter struct {
 	adapter              *adapter.Adapter1
 	id                   string
 	Mac                  string
+	TargetName           string
 	cancelChan           chan struct{}
 	defaultAdvertisement *Advertisement
 
@@ -30,12 +31,14 @@ type Adapter struct {
 //
 // Make sure to call Enable() before using it to initialize the adapter.
 var DefaultAdapter = &Adapter{
+	TargetName: "NO",
 	connectHandler: func(device Addresser, connected bool) {
 		return
 	},
 }
 var HCI1Adapter = &Adapter{
-	id: "hci1",
+	id:         "hci1",
+	TargetName: "NO",
 	connectHandler: func(device Addresser, connected bool) {
 		return
 	},
@@ -63,6 +66,10 @@ func (a *Adapter) Enable() (err error) {
 
 func (a *Adapter) SetHciId(id string) {
 	a.id = id
+}
+
+func (a *Adapter) SetTargetName(name string) {
+	a.TargetName = name
 }
 
 func (a *Adapter) Address() (MACAddress, error) {

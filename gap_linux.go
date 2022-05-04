@@ -13,7 +13,7 @@ import (
 	"github.com/muka/go-bluetooth/bluez/profile/device"
 )
 
-var KOSONDEBUG bool = true
+var KOSONDEBUG bool = false
 
 // Address contains a Bluetooth MAC address.
 type Address struct {
@@ -180,7 +180,11 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 					fmt.Printf("props.Name%#v\r\n", props.Name)
 					fmt.Printf("props %#v\r\n", props)
 				}
-				callback(a, makeScanResult(props))
+				if a.TargetName == "NO" {
+					callback(a, makeScanResult(props))
+				} else if a.TargetName == props.Name {
+					callback(a, makeScanResult(props))
+				}
 			case "org.freedesktop.DBus.Properties.PropertiesChanged":
 				interfaceName := sig.Body[0].(string)
 				if interfaceName != "org.bluez.Device1" {
@@ -203,7 +207,13 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 					fmt.Printf("props.Name%#v\r\n", props.Name)
 					fmt.Printf("props %#v\r\n", props)
 				}
-				callback(a, makeScanResult(props))
+				if a.TargetName == "NO" {
+					callback(a, makeScanResult(props))
+				} else if a.TargetName == props.Name {
+					callback(a, makeScanResult(props))
+				}
+				//a.TargetName == "NO"标识恢复源码状态 不加过滤 直接回调
+				//否则 就需要过滤一下
 			}
 		case <-cancelChan:
 			continue
