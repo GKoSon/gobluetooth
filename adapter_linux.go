@@ -71,6 +71,9 @@ func (a *Adapter) SetHciId(id string) {
 func (a *Adapter) SetTargetName(name string) {
 	a.TargetName = name
 }
+func (a *Adapter) Hello() {
+	fmt.Println("HELLO")
+}
 
 func (a *Adapter) Address() (MACAddress, error) {
 	if a.adapter == nil {

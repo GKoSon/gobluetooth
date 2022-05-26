@@ -1,3 +1,4 @@
+//go:build !baremetal
 // +build !baremetal
 
 package bluetooth
@@ -222,19 +223,35 @@ func (c DeviceCharacteristic) WriteWithoutResponse(p []byte) (n int, err error) 
 // Configuration Descriptor (CCCD). This means that most peripherals will send a
 // notification with a new value every time the value of the characteristic
 // changes.
-func (c DeviceCharacteristic) EnableNotifications(callback func(buf []byte)) error {
+func (c DeviceCharacteristic) EnableNotifications(callback func(buf []byte)) (chan *bluez.PropertyChanged, error) {
 	ch, err := c.characteristic.WatchProperties()
 	if err != nil {
-		return err
+		return ch, err
 	}
 	go func() {
 		for update := range ch {
+			if update == nil {
+				break
+			}
 			if update.Interface == "org.bluez.GattCharacteristic1" && update.Name == "Value" {
 				callback(update.Value.([]byte))
 			}
 		}
 	}()
-	return c.characteristic.StartNotify()
+	return ch, c.characteristic.StartNotify()
+}
+func (c DeviceCharacteristic) DisableNotifications(ch chan *bluez.PropertyChanged) error {
+	err := c.characteristic.UnwatchProperties(ch)
+	if err != nil {
+		return err
+	}
+
+	err = c.characteristic.StopNotify()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Read reads the current characteristic value.
