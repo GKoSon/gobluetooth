@@ -116,3 +116,39 @@ func (a *Adapter) Enable3(hcix string) (err error) {
 func (a *Adapter) Reset() (err error) {
 	return linux.Reset(a.id)
 }
+
+//全部冲洗 树干净 所以的连接的 都冲洗走
+func (a *Adapter) Flush() (err error) {
+	devices, err := a.adapter.GetDevices()
+	if err != nil {
+		return err
+	}
+	fmt.Println(len(devices))
+	fmt.Println(devices[0])
+
+	for i, dev := range devices {
+		fmt.Println(i, dev.Path())
+		err = a.adapter.RemoveDevice(dev.Path())
+		if err != nil {
+			return fmt.Errorf("FlushDevices.RemoveDevice %s: %s", dev.Path(), err)
+		}
+	}
+	fmt.Println("Flushed")
+	return nil
+}
+
+//传入MAC地址 AA:BB:BB:BB:BB:BB 将其冲洗掉
+func (a *Adapter) FlushOne(address string) (err error) {
+	device, err := a.adapter.GetDeviceByAddress(address)
+	if err != nil {
+		return err
+	}
+
+	err = a.adapter.RemoveDevice(device.Path())
+	if err != nil {
+		return fmt.Errorf("FlushDevices.RemoveDevice %s: %s", device.Path(), err)
+	}
+
+	fmt.Println("FlushOne ", device.Path())
+	return nil
+}
