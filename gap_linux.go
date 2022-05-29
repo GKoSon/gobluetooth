@@ -223,6 +223,142 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 	// unreachable
 }
 
+func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
+	if a.cancelChan != nil {
+		return errScanning
+	}
+
+	cancelChan := make(chan struct{})
+	a.cancelChan = cancelChan
+
+	bus, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+
+	signal := make(chan *dbus.Signal)
+	bus.Signal(signal)
+	defer bus.RemoveSignal(signal)
+
+	propertiesChangedMatchOptions := []dbus.MatchOption{dbus.WithMatchInterface("org.freedesktop.DBus.Properties")}
+	bus.AddMatchSignal(propertiesChangedMatchOptions...)
+	defer bus.RemoveMatchSignal(propertiesChangedMatchOptions...)
+
+	newObjectMatchOptions := []dbus.MatchOption{dbus.WithMatchInterface("org.freedesktop.DBus.ObjectManager")}
+	bus.AddMatchSignal(newObjectMatchOptions...)
+	defer bus.RemoveMatchSignal(newObjectMatchOptions...)
+
+	deviceList, err := a.adapter.GetDevices()
+	if err != nil {
+		return err
+	}
+	devices := make(map[dbus.ObjectPath]*device.Device1Properties)
+	for _, dev := range deviceList {
+		if dev.Properties.Connected {
+			fmt.Println("MCUBE NEVER SHOW 我们的业务这里不可以有连着的从机")
+			callback(a, makeScanResult(dev.Properties))
+			select {
+			case <-cancelChan:
+				return nil
+			default:
+			}
+		} else {
+			//冲洗--解决扫不到问题
+			err = a.adapter.RemoveDevice(dev.Path())
+			if err != nil {
+				return fmt.Errorf("FlushDevices.RemoveDevice %s: %s", dev.Path(), err)
+			}
+			fmt.Println("RemoveDevice", dev.Path())
+		}
+		devices[dev.Path()] = dev.Properties
+	}
+
+	//前置--解决连不上问题
+	err = a.adapter.StartDiscovery()
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-cancelChan:
+			a.adapter.StopDiscovery()
+			return nil
+		default:
+		}
+
+		select {
+		case sig := <-signal:
+			switch sig.Name {
+			case "org.freedesktop.DBus.ObjectManager.InterfacesAdded":
+				objectPath := sig.Body[0].(dbus.ObjectPath)
+				interfaces := sig.Body[1].(map[string]map[string]dbus.Variant)
+				rawprops, ok := interfaces["org.bluez.Device1"]
+				if !ok {
+					continue
+				}
+				var props *device.Device1Properties
+				props, _ = props.FromDBusMap(rawprops)
+				devices[objectPath] = props
+
+				fmt.Printf("ADD props.Name [%s]\r\n", props.Name)
+
+				//不要回调了 直接去链接它 链接好了 在回调
+				if props.Name == "M_IZAR_ESP_TEST" {
+					a.adapter.StopDiscovery() //必须有这句话 没有他 就会失败！！！！
+					fmt.Printf("ADD connect\r\n")
+					foundDevice := makeScanResult(props)
+					dev, e := a.Connect(foundDevice.Address, ConnectionParams{})
+					if e != nil {
+						fmt.Printf("ADD connect fail %v", e)
+						continue
+					} else {
+						fmt.Printf("ADD connect ok %#v\r\n", dev)
+						callback(a, foundDevice)
+					}
+				}
+				break
+			case "org.freedesktop.DBus.Properties.PropertiesChanged":
+				interfaceName := sig.Body[0].(string)
+				if interfaceName != "org.bluez.Device1" {
+					continue
+				}
+				changes := sig.Body[1].(map[string]dbus.Variant)
+				props := devices[sig.Path]
+				for field, val := range changes {
+					switch field {
+					case "RSSI":
+						props.RSSI = val.Value().(int16)
+					case "Name":
+						props.Name = val.Value().(string)
+					case "UUIDs":
+						props.UUIDs = val.Value().([]string)
+					}
+				}
+
+				fmt.Printf("CHG props.Name [%s]\r\n", props.Name)
+				if props.Name == "M_IZAR_ESP_TEST" {
+					a.adapter.StopDiscovery()
+					fmt.Printf("CHG connect\r\n")
+					foundDevice := makeScanResult(props)
+					dev, e := a.Connect(foundDevice.Address, ConnectionParams{})
+					if e != nil {
+						fmt.Printf("CHG connect fail %v", e)
+						continue
+					} else {
+						fmt.Printf("CHG connect ok %#v\r\n", dev)
+						callback(a, foundDevice)
+					}
+				}
+
+			}
+		case <-cancelChan:
+			continue
+			// unreachable
+		}
+	}
+}
+
 // StopScan stops any in-progress scan. It can be called from within a Scan
 // callback to stop the current scan. If no scan is in progress, an error will
 // be returned.
