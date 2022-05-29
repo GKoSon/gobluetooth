@@ -304,7 +304,8 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 				fmt.Printf("ADD props.Name [%s]\r\n", props.Name)
 
 				//不要回调了 直接去链接它 链接好了 在回调
-				if props.Name == "M_IZAR_ESP_TEST" {
+				//if props.Name == "M_IZAR_ESP_TEST" {
+				if props.Name == a.TargetName {
 					a.adapter.StopDiscovery() //必须有这句话 没有他 就会失败！！！！
 					fmt.Printf("ADD connect\r\n")
 					foundDevice := makeScanResult(props)
@@ -337,7 +338,8 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 				}
 
 				fmt.Printf("CHG props.Name [%s]\r\n", props.Name)
-				if props.Name == "M_IZAR_ESP_TEST" {
+				//if props.Name == "M_IZAR_ESP_TEST" {
+				if props.Name == a.TargetName {
 					a.adapter.StopDiscovery()
 					fmt.Printf("CHG connect\r\n")
 					foundDevice := makeScanResult(props)
@@ -417,13 +419,18 @@ func (a *Adapter) Connect(address Addresser, params ConnectionParams) (*Device, 
 		return nil, err
 	}
 
+	fmt.Printf("==>dev.Properties.Connected=%v\r\n", dev.Properties.Connected)
 	if !dev.Properties.Connected {
 		// Not yet connected, so do it now.
 		// The properties have just been read so this is fresh data.
+
 		err := dev.Connect()
+		fmt.Printf("==>dev.Properties.Connected==>dev.Connect()=%v\r\n", err)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		fmt.Printf("==>dev.Properties.Connected==>do nothing\r\n")
 	}
 	// TODO: a proper async callback.
 	a.connectHandler(nil, true)

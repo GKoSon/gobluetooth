@@ -124,8 +124,11 @@ func (a *Adapter) Flush() (err error) {
 		return err
 	}
 	fmt.Println(len(devices))
-	fmt.Println(devices[0])
 
+	if 0 == len(devices) {
+		fmt.Println("Tree is zero -do nothing-busctl tree org.bluez\r\n")
+		return nil
+	}
 	for i, dev := range devices {
 		fmt.Println(i, dev.Path())
 		err = a.adapter.RemoveDevice(dev.Path())
@@ -135,6 +138,7 @@ func (a *Adapter) Flush() (err error) {
 	}
 	fmt.Println("Flushed")
 	return nil
+
 }
 
 //传入MAC地址 AA:BB:BB:BB:BB:BB 将其冲洗掉

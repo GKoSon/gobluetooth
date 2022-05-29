@@ -1,0 +1,3 @@
+win10
+把这个文件夹剪切到外面 和gobluetooth文件夹平级
+就可以vscode执行了
