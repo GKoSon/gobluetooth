@@ -311,7 +311,8 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 					foundDevice := makeScanResult(props)
 					dev, e := a.Connect(foundDevice.Address, ConnectionParams{})
 					if e != nil {
-						fmt.Printf("ADD connect fail %v", e)
+						fmt.Printf("ADD connect fail [%v]\r\n", e)
+						a.adapter.StartDiscovery() //失败还原
 						continue
 					} else {
 						fmt.Printf("ADD connect ok %#v\r\n", dev)
@@ -345,7 +346,8 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 					foundDevice := makeScanResult(props)
 					dev, e := a.Connect(foundDevice.Address, ConnectionParams{})
 					if e != nil {
-						fmt.Printf("CHG connect fail %v", e)
+						fmt.Printf("CHG connect fail [%v]\r\n", e)
+						a.adapter.StartDiscovery() //失败还原
 						continue
 					} else {
 						fmt.Printf("CHG connect ok %#v\r\n", dev)
@@ -356,7 +358,6 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 			}
 		case <-cancelChan:
 			continue
-			// unreachable
 		}
 	}
 }
