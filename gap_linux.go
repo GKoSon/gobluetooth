@@ -4,16 +4,15 @@
 package bluetooth
 
 import (
-	"fmt" //debug
+	"log"
 	"strings"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/muka/go-bluetooth/api"
 	"github.com/muka/go-bluetooth/bluez/profile/advertising"
 	"github.com/muka/go-bluetooth/bluez/profile/device"
 )
-
-var KOSONDEBUG bool = false
 
 // Address contains a Bluetooth MAC address.
 type Address struct {
@@ -62,7 +61,6 @@ func (a *Advertisement) Configure(options AdvertisementOptions) error {
 func (a *Advertisement) Start() error {
 	if a.advertisement != nil {
 		panic("todo: start advertisement a second time")
-		fmt.Println("\r\n")
 	}
 	_, err := api.ExposeAdvertisement(a.adapter.id, a.properties, uint32(a.properties.Timeout))
 	if err != nil {
@@ -79,7 +77,7 @@ func (a *Advertisement) Start() error {
 // behavior as if the actual packets were observed, but it has flaws: it is
 // possible some events are missed and perhaps even possible that some events
 // are duplicated.
-func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
+func (a *Adapter) Scan(filter map[string]interface{}, callback func(*Adapter, ScanResult)) error {
 	if a.cancelChan != nil {
 		return errScanning
 	}
@@ -91,12 +89,12 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 	a.cancelChan = cancelChan
 
 	// This appears to be necessary to receive any BLE discovery results at all.
-	defer a.adapter.SetDiscoveryFilter(nil)
-	err := a.adapter.SetDiscoveryFilter(map[string]interface{}{
-		"Transport": "le",
-	})
-	if err != nil {
-		return err
+	if filter != nil {
+		defer a.adapter.SetDiscoveryFilter(nil)
+		err := a.adapter.SetDiscoveryFilter(filter)
+		if err != nil {
+			return err
+		}
 	}
 
 	bus, err := dbus.SystemBus()
@@ -128,10 +126,6 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 	devices := make(map[dbus.ObjectPath]*device.Device1Properties)
 	for _, dev := range deviceList {
 		if dev.Properties.Connected {
-			if KOSONDEBUG {
-				fmt.Println("1")
-				fmt.Println("dev.Properties", dev.Properties)
-			}
 			callback(a, makeScanResult(dev.Properties))
 			select {
 			case <-cancelChan:
@@ -175,16 +169,8 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 				var props *device.Device1Properties
 				props, _ = props.FromDBusMap(rawprops)
 				devices[objectPath] = props
-				if KOSONDEBUG {
-					fmt.Println("2")
-					fmt.Printf("props.Name%#v\r\n", props.Name)
-					fmt.Printf("props %#v\r\n", props)
-				}
-				if a.TargetName == "NO" {
-					callback(a, makeScanResult(props))
-				} else if a.TargetName == props.Name {
-					callback(a, makeScanResult(props))
-				}
+				//log.Printf("Scan InterfacesAdded : %v\r\n", makeScanResult(props).Address)
+				callback(a, makeScanResult(props))
 			case "org.freedesktop.DBus.Properties.PropertiesChanged":
 				interfaceName := sig.Body[0].(string)
 				if interfaceName != "org.bluez.Device1" {
@@ -202,18 +188,9 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 						props.UUIDs = val.Value().([]string)
 					}
 				}
-				if KOSONDEBUG {
-					fmt.Println("3")
-					fmt.Printf("props.Name%#v\r\n", props.Name)
-					fmt.Printf("props %#v\r\n", props)
-				}
-				if a.TargetName == "NO" {
-					callback(a, makeScanResult(props))
-				} else if a.TargetName == props.Name {
-					callback(a, makeScanResult(props))
-				}
-				//a.TargetName == "NO"标识恢复源码状态 不加过滤 直接回调
-				//否则 就需要过滤一下
+				//log.Printf("Scan PropertiesChanged : %v\r\n", makeScanResult(props).Address)
+				callback(a, makeScanResult(props))
+
 			}
 		case <-cancelChan:
 			continue
@@ -223,13 +200,23 @@ func (a *Adapter) Scan(callback func(*Adapter, ScanResult)) error {
 	// unreachable
 }
 
-func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
+var setOnce bool = true
+
+func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter, ScanResult)) error {
 	if a.cancelChan != nil {
 		return errScanning
 	}
 
 	cancelChan := make(chan struct{})
 	a.cancelChan = cancelChan
+
+	if setOnce {
+		err := a.adapter.SetDiscoveryFilter(filter)
+		if err != nil {
+			return err
+		}
+		setOnce = false
+	}
 
 	bus, err := dbus.SystemBus()
 	if err != nil {
@@ -248,29 +235,24 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 	bus.AddMatchSignal(newObjectMatchOptions...)
 	defer bus.RemoveMatchSignal(newObjectMatchOptions...)
 
+	thisdevice := make(map[dbus.ObjectPath]*device.Device1Properties)
+	//start
 	deviceList, err := a.adapter.GetDevices()
 	if err != nil {
 		return err
 	}
-	devices := make(map[dbus.ObjectPath]*device.Device1Properties)
 	for _, dev := range deviceList {
 		if dev.Properties.Connected {
-			fmt.Println("MCUBE NEVER SHOW 我们的业务这里不可以有连着的从机")
-			callback(a, makeScanResult(dev.Properties))
+			log.Printf("Node %s is TXRXING do not touch  %s", dev.Properties.Name, dev.Properties.Address)
 			select {
 			case <-cancelChan:
 				return nil
 			default:
 			}
 		} else {
-			//冲洗--解决扫不到问题
-			err = a.adapter.RemoveDevice(dev.Path())
-			if err != nil {
-				return fmt.Errorf("FlushDevices.RemoveDevice %s: %s", dev.Path(), err)
-			}
-			fmt.Println("RemoveDevice", dev.Path())
+			a.FlushOne(dev.Properties.Address)
 		}
-		devices[dev.Path()] = dev.Properties
+		thisdevice[dev.Path()] = dev.Properties
 	}
 
 	//前置--解决连不上问题
@@ -278,7 +260,7 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 	if err != nil {
 		return err
 	}
-
+	seconddisconnect := false
 	for {
 		select {
 		case <-cancelChan:
@@ -299,26 +281,13 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 				}
 				var props *device.Device1Properties
 				props, _ = props.FromDBusMap(rawprops)
-				devices[objectPath] = props
+				thisdevice[objectPath] = props
 
-				fmt.Printf("ADD props.Name [%s]\r\n", props.Name)
-
-				//不要回调了 直接去链接它 链接好了 在回调
-				//if props.Name == "M_IZAR_ESP_TEST" {
-				if props.Name == a.TargetName {
-					a.adapter.StopDiscovery() //必须有这句话 没有他 就会失败！！！！
-					fmt.Printf("ADD connect\r\n")
-					foundDevice := makeScanResult(props)
-					dev, e := a.Connect(foundDevice.Address, ConnectionParams{})
-					if e != nil {
-						fmt.Printf("ADD connect fail [%v]\r\n", e)
-						a.adapter.StartDiscovery() //失败还原
-						continue
-					} else {
-						fmt.Printf("ADD connect ok %#v\r\n", dev)
-						callback(a, foundDevice)
-					}
-				}
+				log.Printf("TingGo get NEW Node props.Name [%s]\r\n", props.Name)
+				log.Printf("TingGo get NEW Node props.Address [%s]\r\n", props.Address)
+				a.adapter.StopDiscovery()
+				connecteddev := a.MUKAConnect(props.Address)
+				log.Printf("TingGo cmd MUKAConnect [%v]\r\n", connecteddev)
 				break
 			case "org.freedesktop.DBus.Properties.PropertiesChanged":
 				interfaceName := sig.Body[0].(string)
@@ -326,7 +295,10 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 					continue
 				}
 				changes := sig.Body[1].(map[string]dbus.Variant)
-				props := devices[sig.Path]
+				props := thisdevice[sig.Path]
+				if props == nil {
+					break
+				}
 				for field, val := range changes {
 					switch field {
 					case "RSSI":
@@ -335,31 +307,47 @@ func (a *Adapter) ScanPlus(callback func(*Adapter, ScanResult)) error {
 						props.Name = val.Value().(string)
 					case "UUIDs":
 						props.UUIDs = val.Value().([]string)
+					case "Connected":
+						props.Connected = val.Value().(bool)
+						if props.Connected == true {
+							log.Printf("TingGo CHG Connected\r\n")
+							seconddisconnect = true
+						} else if props.Connected == false {
+							log.Printf("TingGo CHG DisConnected\r\n")
+							if seconddisconnect { //help 1--会过来 但是过了两次 秒断
+								seconddisconnect = false
+								a.FlushOne(props.Address)
+								a.adapter.StartDiscovery()
+							}
+						}
+					case "ServicesResolved":
+						props.ServicesResolved = val.Value().(bool)
+						if props.ServicesResolved == true {
+							log.Printf("TingGo CHG ServicesResolved\r\n")
+						} else if props.ServicesResolved == false {
+							log.Printf("TingGo CHG DisServicesResolved\r\n")
+						}
 					}
 				}
 
-				fmt.Printf("CHG props.Name [%s]\r\n", props.Name)
-				//if props.Name == "M_IZAR_ESP_TEST" {
-				if props.Name == a.TargetName {
-					a.adapter.StopDiscovery()
-					fmt.Printf("CHG connect\r\n")
+				if props.ServicesResolved == true {
+					log.Printf("TingGo Conformed go to main APP\r\n")
 					foundDevice := makeScanResult(props)
-					dev, e := a.Connect(foundDevice.Address, ConnectionParams{})
-					if e != nil {
-						fmt.Printf("CHG connect fail [%v]\r\n", e)
-						a.adapter.StartDiscovery() //失败还原
-						continue
-					} else {
-						fmt.Printf("CHG connect ok %#v\r\n", dev)
-						callback(a, foundDevice)
-					}
+					callback(a, foundDevice)
+				} else {
+					log.Printf("TingGo waiting Dbus\r\n")
 				}
+				time.Sleep(time.Microsecond * 100)
+				a.adapter.StartDiscovery()
+				break
 
 			}
 		case <-cancelChan:
 			continue
 		}
 	}
+
+	// unreachable
 }
 
 // StopScan stops any in-progress scan. It can be called from within a Scan
@@ -391,8 +379,9 @@ func makeScanResult(props *device.Device1Properties) ScanResult {
 	a.SetRandom(props.AddressType == "random")
 
 	return ScanResult{
-		RSSI:    props.RSSI,
-		Address: a,
+		RSSI:        props.RSSI,
+		Address:     a,
+		MUKAAddress: props.Address,
 		AdvertisementPayload: &advertisementFields{
 			AdvertisementFields{
 				LocalName:    props.Name,
@@ -408,6 +397,20 @@ type Device struct {
 	DevPath string //debug
 }
 
+func (a *Adapter) MUKAConnect(address string) *device.Device1 {
+
+	dev, err := a.adapter.GetDeviceByAddress(address)
+	if err != nil {
+		return nil
+	}
+
+	err = dev.Connect()
+	if err != nil {
+		return nil
+	}
+	return dev
+}
+
 // Connect starts a connection attempt to the given peripheral device address.
 //
 // On Linux and Windows, the IsRandom part of the address is ignored.
@@ -420,24 +423,37 @@ func (a *Adapter) Connect(address Addresser, params ConnectionParams) (*Device, 
 		return nil, err
 	}
 
-	fmt.Printf("==>dev.Properties.Connected=%v\r\n", dev.Properties.Connected)
+	log.Printf("==>dev.Properties.Connected=%v\r\n", dev.Properties.Connected)
 	if !dev.Properties.Connected {
 		// Not yet connected, so do it now.
 		// The properties have just been read so this is fresh data.
 
 		err := dev.Connect()
-		fmt.Printf("==>dev.Properties.Connected==>dev.Connect()=%v\r\n", err)
+		log.Printf("==>dev.Properties.Connected==>dev.Connect()=%v\r\n", err)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		fmt.Printf("==>dev.Properties.Connected==>do nothing\r\n")
+		log.Printf("==>dev.Properties.Connected==>do nothing\r\n")
 	}
 	// TODO: a proper async callback.
 	a.connectHandler(nil, true)
 	return &Device{
 		device:  dev,
 		DevPath: path,
+	}, nil
+}
+
+func (a *Adapter) MUKAGetDeviceByAddress(address string) (*Device, error) {
+
+	dev, err := a.adapter.GetDeviceByAddress(address)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Device{
+		device:  dev,
+		DevPath: address,
 	}, nil
 }
 

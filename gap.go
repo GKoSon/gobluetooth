@@ -94,7 +94,8 @@ type Addresser interface {
 // received. It is passed as a parameter to the callback of the Scan method.
 type ScanResult struct {
 	// Bluetooth address of the scanned device.
-	Address Addresser
+	Address     Addresser
+	MUKAAddress string
 
 	// RSSI the last time a packet from this device has been received.
 	RSSI int16
