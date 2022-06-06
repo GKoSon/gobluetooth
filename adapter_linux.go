@@ -126,11 +126,12 @@ func (a *Adapter) Flush() (err error) {
 	fmt.Println(len(devices))
 
 	if 0 == len(devices) {
-		fmt.Println("Tree is zero -do nothing-busctl tree org.bluez\r\n")
+		fmt.Println("Tree is zero ---do nothing--- busctl tree org.bluez\r\n")
 		return nil
 	}
 	for i, dev := range devices {
 		fmt.Println(i, dev.Path())
+		//dev.Close()
 		err = a.adapter.RemoveDevice(dev.Path())
 		if err != nil {
 			return fmt.Errorf("FlushDevices.RemoveDevice %s: %s", dev.Path(), err)
@@ -147,12 +148,16 @@ func (a *Adapter) FlushOne(address string) (err error) {
 	if err != nil {
 		return err
 	}
-
+	if device == nil {
+		fmt.Println("FlushOne Null")
+		return nil
+	}
+	//device.Close()
 	err = a.adapter.RemoveDevice(device.Path())
 	if err != nil {
 		return fmt.Errorf("FlushDevices.RemoveDevice %s: %s", device.Path(), err)
 	}
 
-	fmt.Println("FlushOne ", device.Path())
+	fmt.Println("FlushOne OK", device.Path())
 	return nil
 }

@@ -203,6 +203,8 @@ func (a *Adapter) Scan(filter map[string]interface{}, callback func(*Adapter, Sc
 var setOnce bool = true
 
 func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter, ScanResult)) error {
+	ch_koson_connect := make(chan bool)
+	defer close(ch_koson_connect)
 	if a.cancelChan != nil {
 		return errScanning
 	}
@@ -216,6 +218,7 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 			return err
 		}
 		setOnce = false
+		go a.KosonFlush()//定时清空
 	}
 
 	bus, err := dbus.SystemBus()
@@ -243,6 +246,7 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 	}
 	for _, dev := range deviceList {
 		if dev.Properties.Connected {
+			thisdevice[dev.Path()] = dev.Properties
 			log.Printf("Node %s is TXRXING do not touch  %s", dev.Properties.Name, dev.Properties.Address)
 			select {
 			case <-cancelChan:
@@ -252,8 +256,10 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 		} else {
 			a.FlushOne(dev.Properties.Address)
 		}
-		thisdevice[dev.Path()] = dev.Properties
+
 	}
+
+	log.Printf("TingGo thisdevice %#v\r\n", thisdevice)
 
 	//前置--解决连不上问题
 	err = a.adapter.StartDiscovery()
@@ -261,6 +267,8 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 		return err
 	}
 	seconddisconnect := false
+	var NEW_CHG_SAME_PATH dbus.ObjectPath
+
 	for {
 		select {
 		case <-cancelChan:
@@ -272,26 +280,38 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 		select {
 		case sig := <-signal:
 			switch sig.Name {
+			case "org.freedesktop.DBus.ObjectManager.InterfacesRemoved": //DEL
+				//objectPath := sig.Body[0].(dbus.ObjectPath)
+				//log.Printf("TingGo DEL Node[%s]\r\n", objectPath)
+
 			case "org.freedesktop.DBus.ObjectManager.InterfacesAdded":
+				log.Printf("TingGo NEW Node[%#v]\r\n", sig)
 				objectPath := sig.Body[0].(dbus.ObjectPath)
 				interfaces := sig.Body[1].(map[string]map[string]dbus.Variant)
 				rawprops, ok := interfaces["org.bluez.Device1"]
 				if !ok {
 					continue
 				}
-				var props *device.Device1Properties
+				var props *device.Device1Properties //这就是巨大的结构体 有可能第一次就连接好吗?
 				props, _ = props.FromDBusMap(rawprops)
 				thisdevice[objectPath] = props
 
-				log.Printf("TingGo get NEW Node props.Name [%s]\r\n", props.Name)
-				log.Printf("TingGo get NEW Node props.Address [%s]\r\n", props.Address)
+				log.Printf("TingGo NEW Node props.Name [%s]\r\n", props.Name)
+				log.Printf("TingGo NEW Node props.Address [%s]\r\n", props.Address)
 				a.adapter.StopDiscovery()
-				connecteddev := a.MUKAConnect(props.Address)
-				log.Printf("TingGo cmd MUKAConnect [%v]\r\n", connecteddev)
+				NEW_CHG_SAME_PATH = objectPath
+				//connecteddev := a.MUKAConnect(props.Address)
+				//log.Printf("TingGo cmd MUKAConnect [%v]\r\n", connecteddev)
+				go a.KosonConnect(thisdevice, objectPath, ch_koson_connect, callback)
 				break
 			case "org.freedesktop.DBus.Properties.PropertiesChanged":
 				interfaceName := sig.Body[0].(string)
 				if interfaceName != "org.bluez.Device1" {
+					continue
+				}
+				if NEW_CHG_SAME_PATH != sig.Path { //关键
+					log.Printf("TingGo car [%s][%s]\r\n", NEW_CHG_SAME_PATH, sig.Path)
+					a.adapter.StartDiscovery()
 					continue
 				}
 				changes := sig.Body[1].(map[string]dbus.Variant)
@@ -310,35 +330,33 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 					case "Connected":
 						props.Connected = val.Value().(bool)
 						if props.Connected == true {
-							log.Printf("TingGo CHG Connected\r\n")
+							log.Printf("TingGo CHG Connected [%s]\r\n", props.Address)
 							seconddisconnect = true
 						} else if props.Connected == false {
-							log.Printf("TingGo CHG DisConnected\r\n")
+							log.Printf("TingGo CHG DisConnected[%v] [%s]\r\n", seconddisconnect, props.Address)
 							if seconddisconnect { //help 1--会过来 但是过了两次 秒断
+								a.adapter.StartDiscovery()
 								seconddisconnect = false
 								a.FlushOne(props.Address)
-								a.adapter.StartDiscovery()
+								ch_koson_connect <- false
 							}
 						}
 					case "ServicesResolved":
 						props.ServicesResolved = val.Value().(bool)
 						if props.ServicesResolved == true {
-							log.Printf("TingGo CHG ServicesResolved\r\n")
+							log.Printf("TingGo CHG ServicesResolved [%s]\r\n", props.Address)
+							ch_koson_connect <- true
 						} else if props.ServicesResolved == false {
-							log.Printf("TingGo CHG DisServicesResolved\r\n")
+							log.Printf("TingGo CHG DisServicesResolved [%s]\r\n", props.Address)
 						}
 					}
 				}
+				/*
+				   2022/06/06 14:17:45.232437 gap_linux.go:193: TingGo CHG Connected
+				   2022/06/06 14:17:45.232485 gap_linux.go:210: TingGo CHG DisServicesResolved
+				   2022/06/06 14:17:45.232520 gap_linux.go:196: TingGo CHG DisConnected
 
-				if props.ServicesResolved == true {
-					log.Printf("TingGo Conformed go to main APP\r\n")
-					foundDevice := makeScanResult(props)
-					callback(a, foundDevice)
-				} else {
-					log.Printf("TingGo waiting Dbus\r\n")
-				}
-				time.Sleep(time.Microsecond * 100)
-				a.adapter.StartDiscovery()
+				*/
 				break
 
 			}
@@ -409,6 +427,63 @@ func (a *Adapter) MUKAConnect(address string) *device.Device1 {
 		return nil
 	}
 	return dev
+}
+
+/*
+退出条件
+return
+1---尝试N次 最后放弃
+2---发生秒断 监听到CHG信号 直接退出 消亡自己进程
+3---连接成功 监听到CHG信号 回调用户空间函数 消亡自己
+
+*/
+
+const CONN_RETRY int = 3
+
+func (a *Adapter) KosonConnect(devmap map[dbus.ObjectPath]*device.Device1Properties,
+	onePath dbus.ObjectPath,
+	dbusack chan bool,
+	callback func(*Adapter, ScanResult)) {
+
+	ticker_period := 3 * time.Second
+	t := time.NewTicker(ticker_period)
+	defer t.Stop()
+
+	props := devmap[onePath]
+	a.MUKAConnect(props.Address)
+
+	retry := 0
+	for {
+		select {
+		case yes := <-dbusack:
+			if yes {
+				callback(a, makeScanResult(props))
+			}
+			return
+		case <-t.C:
+			if retry > CONN_RETRY {
+				log.Printf("KosonConnect giveup%d\r\n", retry)
+				a.adapter.StartDiscovery()
+				return //彻底放弃
+			}
+			a.MUKAConnect(props.Address)
+			retry++
+			log.Printf("KosonConnect retry %d\r\n", retry)
+		}
+	}
+}
+
+func (a *Adapter) KosonFlush() {
+	ticker_period := 1 * time.Minute
+	t := time.NewTicker(ticker_period)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-t.C:
+			log.Printf("FK-KosonFlush========= [%v]\r\n", a.Flush())
+		}
+	}
 }
 
 // Connect starts a connection attempt to the given peripheral device address.
