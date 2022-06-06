@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GKoSon/gobluetooth/watchdog"
 	"github.com/godbus/dbus/v5"
 	"github.com/muka/go-bluetooth/api"
 	"github.com/muka/go-bluetooth/bluez/profile/advertising"
@@ -218,8 +219,12 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 			return err
 		}
 		setOnce = false
-		go a.KosonFlush()//定时清空
+		//go a.KosonFlush() //定时清空 不科学 会撞车 正在TXRX被清空
 	}
+
+	breakout_wdg := watchdog.New(time.Second*10, func() { a.KosonFlush() })
+	breakout_wdg.Reset()
+	defer breakout_wdg.Stop()
 
 	bus, err := dbus.SystemBus()
 	if err != nil {
@@ -285,7 +290,7 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 				//log.Printf("TingGo DEL Node[%s]\r\n", objectPath)
 
 			case "org.freedesktop.DBus.ObjectManager.InterfacesAdded":
-				log.Printf("TingGo NEW Node[%#v]\r\n", sig)
+				//log.Printf("TingGo NEW Node[%#v]\r\n", sig)
 				objectPath := sig.Body[0].(dbus.ObjectPath)
 				interfaces := sig.Body[1].(map[string]map[string]dbus.Variant)
 				rawprops, ok := interfaces["org.bluez.Device1"]
@@ -299,6 +304,7 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 				log.Printf("TingGo NEW Node props.Name [%s]\r\n", props.Name)
 				log.Printf("TingGo NEW Node props.Address [%s]\r\n", props.Address)
 				a.adapter.StopDiscovery()
+				breakout_wdg.Feed()
 				NEW_CHG_SAME_PATH = objectPath
 				//connecteddev := a.MUKAConnect(props.Address)
 				//log.Printf("TingGo cmd MUKAConnect [%v]\r\n", connecteddev)
@@ -314,6 +320,7 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 					a.adapter.StartDiscovery()
 					continue
 				}
+
 				changes := sig.Body[1].(map[string]dbus.Variant)
 				props := thisdevice[sig.Path]
 				if props == nil {
@@ -351,12 +358,7 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 						}
 					}
 				}
-				/*
-				   2022/06/06 14:17:45.232437 gap_linux.go:193: TingGo CHG Connected
-				   2022/06/06 14:17:45.232485 gap_linux.go:210: TingGo CHG DisServicesResolved
-				   2022/06/06 14:17:45.232520 gap_linux.go:196: TingGo CHG DisConnected
 
-				*/
 				break
 
 			}
@@ -484,6 +486,10 @@ func (a *Adapter) KosonFlush() {
 			log.Printf("FK-KosonFlush========= [%v]\r\n", a.Flush())
 		}
 	}
+}
+
+func (a *Adapter) KosonFlushTree() {
+	log.Printf("KosonFlushTree========= [%v]\r\n", a.Flush())
 }
 
 // Connect starts a connection attempt to the given peripheral device address.
