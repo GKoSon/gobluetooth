@@ -6,9 +6,9 @@ package bluetooth
 import (
 	"log"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/GKoSon/gobluetooth/watchdog"
 	"github.com/godbus/dbus/v5"
 	"github.com/muka/go-bluetooth/api"
 	"github.com/muka/go-bluetooth/bluez/profile/advertising"
@@ -201,11 +201,76 @@ func (a *Adapter) Scan(filter map[string]interface{}, callback func(*Adapter, Sc
 	// unreachable
 }
 
+var discoverying bool = false
+var Chdiscovery = make(chan bool)
+
+func (a *Adapter) resetdiscoverying() {
+	log.Printf("TingGo discoverying set false\r\n")
+	discoverying = false
+}
+
+//永远在后台执行 永不退出
+//往这个通道发消息 6S以后就会开始发现
+func (a *Adapter) DelayDiscovery(start chan bool) {
+	DurationOfTime := time.Duration(6) * time.Second
+	f := func() {
+		if !discoverying {
+			log.Printf("TinyGo DelayDiscovery\r\n")
+			a.onDiscovery()
+		}
+	}
+	for {
+		select {
+		case <-start:
+			time.AfterFunc(DurationOfTime, f)
+		}
+	}
+}
+
+//放弃使用 过于暴力
+func (a *Adapter) delayDiscovery() {
+	for {
+		time.Sleep(time.Second * 9)
+		if !discoverying {
+			log.Printf("TinyGo delayDiscovery\r\n")
+			a.onDiscovery()
+		}
+	}
+}
+
+func (a *Adapter) onDiscovery() error {
+	if discoverying {
+		log.Println("TinyGo StartDiscovery NULL")
+		return nil
+	}
+
+	err := a.adapter.StartDiscovery()
+	if err != nil {
+		log.Println("TinyGo StartDiscovery", err)
+		return err
+	}
+	discoverying = true
+	return nil
+}
+
+func (a *Adapter) offDiscovery() error {
+	if !discoverying {
+		log.Println("TinyGo StopDiscovery NULL")
+		return nil
+	}
+	err := a.adapter.StopDiscovery()
+	if err != nil {
+		log.Println("TinyGo StopDiscovery", err)
+		return err
+	}
+	discoverying = false
+	return nil
+}
+
 var setOnce bool = true
 
 func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter, ScanResult)) error {
-	ch_koson_connect := make(chan bool)
-	defer close(ch_koson_connect)
+
 	if a.cancelChan != nil {
 		return errScanning
 	}
@@ -213,18 +278,17 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 	cancelChan := make(chan struct{})
 	a.cancelChan = cancelChan
 
+	thisdevice := make(map[dbus.ObjectPath]*device.Device1Properties)
+
 	if setOnce {
 		err := a.adapter.SetDiscoveryFilter(filter)
 		if err != nil {
 			return err
 		}
 		setOnce = false
-		//go a.KosonFlush() //定时清空 不科学 会撞车 正在TXRX被清空
+		//go a.delayDiscovery()
+		go a.DelayDiscovery(Chdiscovery)
 	}
-
-	breakout_wdg := watchdog.New(time.Second*10, func() { a.KosonFlush() })
-	breakout_wdg.Reset()
-	defer breakout_wdg.Stop()
 
 	bus, err := dbus.SystemBus()
 	if err != nil {
@@ -243,46 +307,38 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 	bus.AddMatchSignal(newObjectMatchOptions...)
 	defer bus.RemoveMatchSignal(newObjectMatchOptions...)
 
-	thisdevice := make(map[dbus.ObjectPath]*device.Device1Properties)
-	//start
+	///////////////////start
 	deviceList, err := a.adapter.GetDevices()
 	if err != nil {
+		log.Printf("TingGo income die\r\n")
 		return err
 	}
-	for _, dev := range deviceList {
-		if dev.Properties.Connected {
-			thisdevice[dev.Path()] = dev.Properties
-			log.Printf("Node %s is TXRXING do not touch  %s", dev.Properties.Name, dev.Properties.Address)
-			select {
-			case <-cancelChan:
-				return nil
-			default:
-			}
-		} else {
-			a.FlushOne(dev.Properties.Address)
-		}
 
+	for k, dev := range deviceList {
+		if dev.Properties.Connected {
+			log.Printf("TingGo income %d-%s\r\n", k, dev.Properties.Address)
+		} else {
+			a.adapter.RemoveDevice(dev.Path()) //func (a *Adapter1) FlushDevices()
+			log.Printf("TingGo remove %d-%s\r\n", k, dev.Properties.Address)
+		}
+		thisdevice[dev.Path()] = dev.Properties
 	}
 
-	log.Printf("TingGo thisdevice %#v\r\n", thisdevice)
+	///////////////////end
 
-	//前置--解决连不上问题
-	err = a.adapter.StartDiscovery()
+	err = a.onDiscovery()
 	if err != nil {
 		return err
 	}
-	seconddisconnect := false
-	var NEW_CHG_SAME_PATH dbus.ObjectPath
 
 	for {
-		select {
-		case <-cancelChan:
-			a.adapter.StopDiscovery()
-			return nil
-		default:
-		}
 
 		select {
+		case <-cancelChan:
+			a.offDiscovery()
+			log.Printf("TingGo goodbye\r\n")
+			return nil
+
 		case sig := <-signal:
 			switch sig.Name {
 			case "org.freedesktop.DBus.ObjectManager.InterfacesRemoved": //DEL
@@ -301,73 +357,67 @@ func (a *Adapter) ScanPlus(filter map[string]interface{}, callback func(*Adapter
 				props, _ = props.FromDBusMap(rawprops)
 				thisdevice[objectPath] = props
 
-				log.Printf("TingGo NEW Node props.Name [%s]\r\n", props.Name)
+				//log.Printf("TingGo NEW Node props.Name [%s]\r\n", props.Name)
 				log.Printf("TingGo NEW Node props.Address [%s]\r\n", props.Address)
-				a.adapter.StopDiscovery()
-				breakout_wdg.Feed()
-				NEW_CHG_SAME_PATH = objectPath
-				//connecteddev := a.MUKAConnect(props.Address)
-				//log.Printf("TingGo cmd MUKAConnect [%v]\r\n", connecteddev)
-				go a.KosonConnect(thisdevice, objectPath, ch_koson_connect, callback)
+
+				//go
+				a.MUKAConnect(props.Address)
+
 				break
 			case "org.freedesktop.DBus.Properties.PropertiesChanged":
 				interfaceName := sig.Body[0].(string)
 				if interfaceName != "org.bluez.Device1" {
 					continue
 				}
-				if NEW_CHG_SAME_PATH != sig.Path { //关键
-					log.Printf("TingGo car [%s][%s]\r\n", NEW_CHG_SAME_PATH, sig.Path)
-					a.adapter.StartDiscovery()
-					continue
-				}
 
 				changes := sig.Body[1].(map[string]dbus.Variant)
 				props := thisdevice[sig.Path]
 				if props == nil {
+					log.Printf("TingGo CHG FUCK\r\n")
 					break
 				}
 				for field, val := range changes {
 					switch field {
 					case "RSSI":
 						props.RSSI = val.Value().(int16)
+						log.Printf("TingGo CHG props.RSSI [%v]\r\n", props.RSSI)
+						if !props.Connected {
+							log.Printf("TingGo CHG this gay need connect [%s]\r\n", props.Address)
+							//go
+							a.MUKAConnect(props.Address)
+						}
+						break
 					case "Name":
 						props.Name = val.Value().(string)
+						log.Printf("TingGo CHG props.Name [%v]\r\n", props.Name)
+						break
 					case "UUIDs":
 						props.UUIDs = val.Value().([]string)
+						log.Printf("TingGo CHG props.UUIDs [%v]\r\n", props.UUIDs)
+						break
 					case "Connected":
 						props.Connected = val.Value().(bool)
 						if props.Connected == true {
 							log.Printf("TingGo CHG Connected [%s]\r\n", props.Address)
-							seconddisconnect = true
 						} else if props.Connected == false {
-							log.Printf("TingGo CHG DisConnected[%v] [%s]\r\n", seconddisconnect, props.Address)
-							if seconddisconnect { //help 1--会过来 但是过了两次 秒断
-								a.adapter.StartDiscovery()
-								seconddisconnect = false
-								a.FlushOne(props.Address)
-								ch_koson_connect <- false
-							}
+							log.Printf("TingGo CHG DisConnected [%s]\r\n", props.Address)
 						}
+						break
 					case "ServicesResolved":
 						props.ServicesResolved = val.Value().(bool)
 						if props.ServicesResolved == true {
 							log.Printf("TingGo CHG ServicesResolved [%s]\r\n", props.Address)
-							ch_koson_connect <- true
+							callback(a, makeScanResult(props))
 						} else if props.ServicesResolved == false {
 							log.Printf("TingGo CHG DisServicesResolved [%s]\r\n", props.Address)
 						}
+						break
 					}
 				}
-
 				break
-
-			}
-		case <-cancelChan:
-			continue
-		}
-	}
-
-	// unreachable
+			} //switch
+		} //select
+	} //for
 }
 
 // StopScan stops any in-progress scan. It can be called from within a Scan
@@ -378,6 +428,7 @@ func (a *Adapter) StopScan() error {
 		return errNotScanning
 	}
 	close(a.cancelChan)
+
 	a.cancelChan = nil
 	return nil
 }
@@ -411,85 +462,140 @@ func makeScanResult(props *device.Device1Properties) ScanResult {
 	}
 }
 
+//全部冲洗 树干净 所以的连接的 都冲洗走
+func (a *Adapter) Flush() (err error) {
+	defer a.resetdiscoverying()
+	devices, err := a.adapter.GetDevices()
+	if err != nil {
+		return err
+	}
+
+	if 0 == len(devices) {
+		log.Printf("TingGo Tree is zero ---do nothing--- busctl tree org.bluez\r\n")
+		return nil
+	}
+	for i, dev := range devices {
+		log.Println("TingGo FlushDevices", i, dev.Path(), dev.Properties.Connected)
+		//if !dev.Properties.Connected {
+		err = a.adapter.RemoveDevice(dev.Path())
+		//fmt.Println("REMOVE", dev.Path())
+		//}
+		//err = a.adapter.RemoveDevice(dev.Path())
+		if err != nil {
+			log.Println("TingGo FlushDevices Fail", i, dev.Path())
+			return err
+		}
+	}
+	log.Printf("TingGo Flushed done -busctl tree org.bluez\r\n")
+
+	return nil
+
+}
+
+//传入MAC地址 AA:BB:BB:BB:BB:BB 将其冲洗掉
+func (a *Adapter) FlushOne(address string) (err error) {
+	device, err := a.adapter.GetDeviceByAddress(address)
+	if err != nil {
+		return err
+	}
+	if device == nil {
+		log.Printf("TingGo FlushOne Null\r\n")
+		return nil
+	}
+
+	err = a.adapter.RemoveDevice(device.Path())
+	if err != nil {
+		log.Printf("TingGo FlushOne %s fail %v\r\n", device.Path(), err)
+		return err
+	}
+	device.Close() //测试一下
+	log.Printf("TingGo FlushOne OK %s\r\n", device.Path())
+	return nil
+}
+
 // Device is a connection to a remote peripheral.
 type Device struct {
 	device  *device.Device1
-	DevPath string //debug
+	DevPath string
 }
 
+//做一个表 每次进去的时候就登记 出来的时候就移除 下次进去的时候看看表里面在做啥 如果在工作就不要进去了
+var devMap map[string]bool = make(map[string]bool)
+var lock sync.Mutex
+
+func mapdel(mac string) {
+	lock.Lock()
+	devMap[mac] = false
+	lock.Unlock()
+	log.Printf("TingGo MUKAConnect mapdel[%s]\r\n", mac)
+}
+
+func mapadd(mac string) {
+	lock.Lock()
+	devMap[mac] = true
+	lock.Unlock()
+	log.Printf("TingGo MUKAConnect mapadd[%s]\r\n", mac)
+}
+
+//MUKAConnect Connect ERR:Operation already in progress
 func (a *Adapter) MUKAConnect(address string) *device.Device1 {
 
+	value, ok := devMap[address] //ok为true则存在，ok为false则map的key不存在
+	if ok && value {
+		log.Printf("TingGo MUKACon this gay is working %s\r\n", address)
+		log.Printf("TingGo devMap[%d] %#v\r\n", len(devMap), devMap)
+		return nil
+	}
+	mapadd(address)
+	defer mapdel(address)
+
+	log.Printf("TingGo ==>Connect==>start %s\r\n", address)
+	a.offDiscovery()
+	//defer a.onDiscovery()
+	Chdiscovery <- true
 	dev, err := a.adapter.GetDeviceByAddress(address)
 	if err != nil {
+		log.Printf("TingGo MUKAConnect GetDeviceByAddress ERR1 %v\r\n", err)
+		log.Printf("TingGo ==>Connect==>end1 %s\r\n", address)
+		return nil
+	}
+	if dev == nil {
+		log.Printf("TingGo MUKAConnect GetDeviceByAddress ERR2 %s\r\n", address)
+		log.Printf("TingGo ==>Connect==>end2 %s\r\n", address)
 		return nil
 	}
 
-	err = dev.Connect()
+	err = dev.SetTrusted(true)
 	if err != nil {
+		log.Printf("TingGo MUKAConnect SetTrusted ERR:%v\r\n", err)
+		log.Printf("TingGo ==>Connect==>end3 %s\r\n", address)
 		return nil
 	}
+	retry := 0
+LOOP:
+	err = dev.Connect()
+	if err != nil {
+		log.Printf("TingGo MUKAConnect Connect ERR:%v\r\n", err)
+		log.Printf("TingGo==>Connect==>end4 %s\r\n", address)
+		retry++
+		if retry > 2 {
+			return nil
+		} else {
+			goto LOOP
+		}
+	}
+	log.Printf("TingGo==>Connect==>end5 %s\r\n", address)
+	log.Printf("TingGo MUKAConnect Connect OK %s\r\n", address)
 	return dev
 }
 
-/*
-退出条件
-return
-1---尝试N次 最后放弃
-2---发生秒断 监听到CHG信号 直接退出 消亡自己进程
-3---连接成功 监听到CHG信号 回调用户空间函数 消亡自己
-
-*/
-
-const CONN_RETRY int = 3
-
-func (a *Adapter) KosonConnect(devmap map[dbus.ObjectPath]*device.Device1Properties,
-	onePath dbus.ObjectPath,
-	dbusack chan bool,
-	callback func(*Adapter, ScanResult)) {
-
-	ticker_period := 3 * time.Second
-	t := time.NewTicker(ticker_period)
-	defer t.Stop()
-
-	props := devmap[onePath]
-	a.MUKAConnect(props.Address)
-
-	retry := 0
-	for {
-		select {
-		case yes := <-dbusack:
-			if yes {
-				callback(a, makeScanResult(props))
-			}
-			return
-		case <-t.C:
-			if retry > CONN_RETRY {
-				log.Printf("KosonConnect giveup%d\r\n", retry)
-				a.adapter.StartDiscovery()
-				return //彻底放弃
-			}
-			a.MUKAConnect(props.Address)
-			retry++
-			log.Printf("KosonConnect retry %d\r\n", retry)
-		}
+func String_rm_char(a string, b string) string {
+	mac := ""
+	str := strings.Split(a, b)
+	for _, s := range str {
+		mac += s
 	}
-}
-
-func (a *Adapter) KosonFlush() {
-	ticker_period := 1 * time.Minute
-	t := time.NewTicker(ticker_period)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-t.C:
-			log.Printf("FK-KosonFlush========= [%v]\r\n", a.Flush())
-		}
-	}
-}
-
-func (a *Adapter) KosonFlushTree() {
-	log.Printf("KosonFlushTree========= [%v]\r\n", a.Flush())
+	return mac
 }
 
 // Connect starts a connection attempt to the given peripheral device address.
@@ -504,18 +610,18 @@ func (a *Adapter) Connect(address Addresser, params ConnectionParams) (*Device, 
 		return nil, err
 	}
 
-	log.Printf("==>dev.Properties.Connected=%v\r\n", dev.Properties.Connected)
+	log.Printf("TingGo==>dev.Properties.Connected=%v\r\n", dev.Properties.Connected)
 	if !dev.Properties.Connected {
 		// Not yet connected, so do it now.
 		// The properties have just been read so this is fresh data.
 
 		err := dev.Connect()
-		log.Printf("==>dev.Properties.Connected==>dev.Connect()=%v\r\n", err)
+		log.Printf("TingGo==>dev.Properties.Connected==>dev.Connect()=%v\r\n", err)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		log.Printf("==>dev.Properties.Connected==>do nothing\r\n")
+		log.Printf("TingGo==>dev.Properties.Connected==>do nothing\r\n")
 	}
 	// TODO: a proper async callback.
 	a.connectHandler(nil, true)
@@ -541,7 +647,17 @@ func (a *Adapter) MUKAGetDeviceByAddress(address string) (*Device, error) {
 // Disconnect from the BLE device. This method is non-blocking and does not
 // wait until the connection is fully gone.
 func (d *Device) Disconnect() error {
+	//源码
 	return d.device.Disconnect()
+	//方式2 定位永不返回
+	log.Printf("TingGo==>Disconnect==>start\r\n")
+	d.device.Disconnect()
+	log.Printf("TingGo==>Disconnect==>end\r\n")
+	time.Sleep(time.Microsecond * 50)
+	return nil
+	//方式3
+	//d.device.Close()
+	//return nil
 }
 
 func (d *Device) IsConnected() bool {
